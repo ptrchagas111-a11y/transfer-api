@@ -471,20 +471,50 @@ async function callUnlimitedJson(request, env, path, payload) {
   return response.json();
 }
 
-async function callUnlimitedStream(request, env, path, payload) {
-  const response = await fetch(new URL(path, upstreamBase(env)), {
-    method: "POST",
-    headers: upstreamHeaders(request, env, true),
-    body: JSON.stringify(payload || {}),
-  });
+async function collectUnlimitedText(request, env, path, payload) {
+  try {
+    const response = await callUnlimitedStream(request, env, path, payload);
 
-  if (!response.ok) {
-    throw new Error(`upstream ${path} failed: ${response.status} ${await response.text()}`);
+    // 🔥 MUITO MAIS ESTÁVEL: não tenta interpretar stream
+    const raw = await response.text();
+
+    // tenta extrair texto se vier SSE ou JSON misturado
+    let text = "";
+
+    // caso venha JSON direto
+    try {
+      const json = JSON.parse(raw);
+      text =
+        json?.choices?.[0]?.message?.content ||
+        json?.output_text ||
+        json?.text ||
+        "";
+    } catch {
+      // caso venha SSE ou lixo tipo "OK"
+      text = raw
+        .replace(/data:\s*OK/g, "")
+        .replace(/data:/g, "")
+        .trim();
+    }
+
+    return {
+      text,
+      finishReason: "stop",
+      annotations: [],
+      rawEvent: raw
+    };
+
+  } catch (err) {
+    console.error("collectUnlimitedText error:", err);
+
+    return {
+      text: "",
+      finishReason: "error",
+      annotations: [],
+      rawEvent: ""
+    };
   }
-
-  return response;
 }
-
 async function collectUnlimitedText(request, env, path, payload) {
   const response = await callUnlimitedStream(request, env, path, payload);
   const events = await readUnlimitedEvents(response);
