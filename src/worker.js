@@ -484,7 +484,46 @@ async function callUnlimitedStream(request, env, path, payload) {
 
   return response;
 }
+async function collectUnlimitedText(request, env, path, payload) {
+  try {
+    const response = await callUnlimitedStream(request, env, path, payload);
 
+    const raw = await response.text();
+
+    let text = "";
+
+    try {
+      const json = JSON.parse(raw);
+      text =
+        json?.choices?.[0]?.message?.content ||
+        json?.output_text ||
+        json?.text ||
+        "";
+    } catch {
+      text = raw
+        .replace(/data:\s*OK/g, "")
+        .replace(/data:/g, "")
+        .trim();
+    }
+
+    return {
+      text,
+      finishReason: "stop",
+      annotations: [],
+      rawEvent: raw
+    };
+
+  } catch (err) {
+    console.error("collectUnlimitedText error:", err);
+
+    return {
+      text: "",
+      finishReason: "error",
+      annotations: [],
+      rawEvent: ""
+    };
+  }
+}
 async function collectUnlimitedText(request, env, path, payload) {
   const response = await callUnlimitedStream(request, env, path, payload);
   const events = await readUnlimitedEvents(response);
